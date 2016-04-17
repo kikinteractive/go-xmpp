@@ -614,6 +614,10 @@ func (c *Client) SendOrg(org string) (n int, err error) {
 	return fmt.Fprint(c.conn, org)
 }
 
+func (c *Client) SendPresence(presence Presence) (n int, err error) {
+	return fmt.Fprintf(c.conn, "<presence from='%s' to='%s'/>", xmlEscape(presence.From), xmlEscape(presence.To))
+}
+
 // SendHtml sends the message as HTML as defined by XEP-0071
 func (c *Client) SendHtml(chat Chat) (n int, err error) {
 	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xml:lang='en'>"+
@@ -825,6 +829,8 @@ func next(p *xml.Decoder) (xml.Name, interface{}, error) {
 		nv = &clientIQ{}
 	case nsClient + " error":
 		nv = &clientError{}
+	case nsComponentAccept + " message":
+		nv = &componentMessage{}
 	default:
 		return xml.Name{}, nil, errors.New("unexpected XMPP message " +
 			se.Name.Space + " <" + se.Name.Local + "/>")
@@ -834,6 +840,7 @@ func next(p *xml.Decoder) (xml.Name, interface{}, error) {
 	if err = p.DecodeElement(nv, &se); err != nil {
 		return xml.Name{}, nil, err
 	}
+
 	return se.Name, nv, err
 }
 
