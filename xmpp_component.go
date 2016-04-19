@@ -28,6 +28,11 @@ type componentMessage struct {
 	XMLName xml.Name `xml:"jabber:component:accept message"`
 }
 
+type componentIQ struct {
+	*clientIQ
+	XMLName xml.Name `xml:"jabber:component:accept iq"`
+}
+
 // NewClient establishes a new component Client connection based on a set of Options.
 func (o ComponentOptions) NewClient() (*ComponentClient, error) {
 	host := o.Host
