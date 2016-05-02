@@ -42,7 +42,7 @@ const (
 	nsSession = "urn:ietf:params:xml:ns:xmpp-session"
 )
 
-// Default TLS configuration options
+// DefaultConfig contains default TLS configuration options.
 var DefaultConfig tls.Config
 
 // Cookie is a unique XMPP session identifier
@@ -56,16 +56,47 @@ func getCookie() Cookie {
 	return Cookie(binary.LittleEndian.Uint64(buf[:]))
 }
 
-// Client holds XMPP connection opitons
-type Client struct {
-	conn   net.Conn // connection to server
-	jid    string   // Jabber ID for our connection
-	domain string
-	p      *xml.Decoder
+type Client interface {
+	JID() string
+	Host() string
+	User() string
+	XMLNamespace() string
+	IsEncrypted() bool
+	Roster() error
+	Recv() (stanza interface{}, err error)
+	Send(chat Chat) (n int, err error)
+	SendOrg(org string) (n int, err error)
+	SendPresence(presence Presence) (n int, err error)
+	SendIQ(iq IQ) (n int, err error)
+	PingC2S(jid, server string) error
+	PingS2S(fromServer, toServer string) error
+	Close() error
 }
 
-func (c *Client) JID() string {
+// BasicClient holds XMPP connection opitons
+type BasicClient struct {
+	xmlNs string   // client namespace
+	conn  net.Conn // connection to server
+	jid   string   // Jabber ID for our connection
+	host  string
+	user  string
+	p     *xml.Decoder
+}
+
+func (c *BasicClient) JID() string {
 	return c.jid
+}
+
+func (c *BasicClient) Host() string {
+	return c.host
+}
+
+func (c *BasicClient) User() string {
+	return c.user
+}
+
+func (c *BasicClient) XMLNamespace() string {
+	return c.xmlNs
 }
 
 func connect(host, user, passwd string) (net.Conn, error) {
@@ -141,6 +172,9 @@ type Options struct {
 	// provided to the server as the xmlns:auth attribute of the OAuth2 authentication request.
 	OAuthXmlNs string
 
+	// XML namespace of the client, nsClient by default, but derived clients can change it.
+	ClientXmlNs string
+
 	// TLS Config
 	TLSConfig *tls.Config
 
@@ -171,7 +205,7 @@ type Options struct {
 }
 
 // NewClient establishes a new Client connection based on a set of Options.
-func (o Options) NewClient() (*Client, error) {
+func (o Options) NewClient() (Client, error) {
 	host := o.Host
 	c, err := connect(host, o.User, o.Password)
 	if err != nil {
@@ -182,7 +216,12 @@ func (o Options) NewClient() (*Client, error) {
 		host = host[:strings.LastIndex(o.Host, ":")]
 	}
 
-	client := new(Client)
+	client := &BasicClient{
+		xmlNs: o.ClientXmlNs,
+		host:  host,
+		user:  o.User,
+	}
+
 	if o.NoTLS {
 		client.conn = c
 	} else {
@@ -219,32 +258,34 @@ func (o Options) NewClient() (*Client, error) {
 // NewClient creates a new connection to a host given as "hostname" or "hostname:port".
 // If host is not specified, the  DNS SRV should be used to find the host from the domainpart of the JID.
 // Default the port to 5222.
-func NewClient(host, user, passwd string, debug bool) (*Client, error) {
+func NewClient(host, user, passwd string, debug bool) (Client, error) {
 	opts := Options{
-		Host:     host,
-		User:     user,
-		Password: passwd,
-		Debug:    debug,
-		Session:  false,
+		Host:        host,
+		User:        user,
+		Password:    passwd,
+		Debug:       debug,
+		Session:     false,
+		ClientXmlNs: nsClient,
 	}
 	return opts.NewClient()
 }
 
 // NewClientNoTLS creates a new client without TLS
-func NewClientNoTLS(host, user, passwd string, debug bool) (*Client, error) {
+func NewClientNoTLS(host, user, passwd string, debug bool) (Client, error) {
 	opts := Options{
-		Host:     host,
-		User:     user,
-		Password: passwd,
-		NoTLS:    true,
-		Debug:    debug,
-		Session:  false,
+		Host:        host,
+		User:        user,
+		Password:    passwd,
+		NoTLS:       true,
+		Debug:       debug,
+		Session:     false,
+		ClientXmlNs: nsClient,
 	}
 	return opts.NewClient()
 }
 
 // Close closes the XMPP connection
-func (c *Client) Close() error {
+func (c *BasicClient) Close() error {
 	if c.conn != (*tls.Conn)(nil) {
 		return c.conn.Close()
 	}
@@ -280,7 +321,7 @@ func cnonce() string {
 	return fmt.Sprintf("%016x", cn)
 }
 
-func (c *Client) init(o *Options) error {
+func (c *BasicClient) init(o *Options) error {
 
 	var domain string
 	var user string
@@ -397,7 +438,7 @@ func (c *Client) init(o *Options) error {
 		}
 	}
 	// Next message should be either success or failure.
-	name, val, err := next(c.p)
+	name, val, err := c.next(c.p)
 	if err != nil {
 		return err
 	}
@@ -448,7 +489,7 @@ func (c *Client) init(o *Options) error {
 
 // startTlsIfRequired examines the server's stream features and, if STARTTLS is required or supported, performs the TLS handshake.
 // f will be updated if the handshake completes, as the new stream's features are typically different from the original.
-func (c *Client) startTLSIfRequired(f *streamFeatures, o *Options, domain string) (*streamFeatures, error) {
+func (c *BasicClient) startTLSIfRequired(f *streamFeatures, o *Options, domain string) (*streamFeatures, error) {
 	// whether we start tls is a matter of opinion: the server's and the user's.
 	switch {
 	case f.StartTLS == nil:
@@ -470,7 +511,7 @@ func (c *Client) startTLSIfRequired(f *streamFeatures, o *Options, domain string
 	tc := o.TLSConfig
 	if tc == nil {
 		tc = new(tls.Config)
-		*tc = DefaultConfig
+		tc = &DefaultConfig
 		//TODO(scott): we should consider using the server's address or reverse lookup
 		tc.ServerName = domain
 	}
@@ -492,17 +533,15 @@ func (c *Client) startTLSIfRequired(f *streamFeatures, o *Options, domain string
 // startStream will start a new XML decoder for the connection, signal the start of a stream to the server and verify that the server has
 // also started the stream; if o.Debug is true, startStream will tee decoded XML data to stderr.  The features advertised by the server
 // will be returned.
-func (c *Client) startStream(o *Options, domain string) (*streamFeatures, error) {
+func (c *BasicClient) startStream(o *Options, domain string) (*streamFeatures, error) {
 	if o.Debug {
 		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
 	} else {
 		c.p = xml.NewDecoder(c.conn)
 	}
 
-	_, err := fmt.Fprintf(c.conn, "<?xml version='1.0'?>\n"+
-		"<stream:stream to='%s' xmlns='%s'\n"+
-		" xmlns:stream='%s' version='1.0'>\n",
-		xmlEscape(domain), nsClient, nsStream)
+	_, err := fmt.Fprintf(c.conn, "<?xml version='1.0'?><stream:stream to='%s' xmlns='%s' xmlns:stream='%s' version='1.0'>\n",
+		xmlEscape(domain), c.xmlNs, nsStream)
 	if err != nil {
 		return nil, err
 	}
@@ -523,12 +562,21 @@ func (c *Client) startStream(o *Options, domain string) (*streamFeatures, error)
 	if err = c.p.DecodeElement(f, nil); err != nil {
 		return f, errors.New("unmarshal <features>: " + err.Error())
 	}
+
+	// Find the stream id.
+	for _, attr := range se.Attr {
+		if attr.Name.Local == "id" {
+			f.StreamID = attr.Value
+			break
+		}
+	}
+
 	return f, nil
 }
 
 // IsEncrypted will return true if the client is connected using a TLS transport, either because it used.
 // TLS to connect from the outset, or because it successfully used STARTTLS to promote a TCP connection to TLS.
-func (c *Client) IsEncrypted() bool {
+func (c *BasicClient) IsEncrypted() bool {
 	_, ok := c.conn.(*tls.Conn)
 	return ok
 }
@@ -543,6 +591,7 @@ type Chat struct {
 	Stamp  time.Time
 }
 
+// Roster is an array of contacts.
 type Roster []Contact
 
 type Contact struct {
@@ -560,38 +609,27 @@ type Presence struct {
 	Status string
 }
 
+// IQ is an XMPP info/query.
 type IQ struct {
-	ID   string
-	From string
-	To   string
-	Type string
+	ID      string
+	From    string
+	To      string
+	Type    string
+	Payload string
 }
 
 // Recv waits to receive the next XMPP stanza.
 // Return type is either a presence notification or a chat message.
-func (c *Client) Recv() (stanza interface{}, err error) {
+func (c *BasicClient) Recv() (stanza interface{}, err error) {
 	for {
-		_, val, err := next(c.p)
+		_, val, err := c.next(c.p)
 		if err != nil {
 			return Chat{}, err
 		}
 		switch v := val.(type) {
 		case *clientMessage:
 			stamp, _ := time.Parse(
-				"2006-01-02T15:04:05Z",
-				v.Delay.Stamp,
-			)
-			chat := Chat{
-				Remote: v.From,
-				Type:   v.Type,
-				Text:   v.Body,
-				Other:  v.Other,
-				Stamp:  stamp,
-			}
-			return chat, nil
-		case *componentMessage:
-			stamp, _ := time.Parse(
-				"2006-01-02T15:04:05Z",
+				time.RFC3339,
 				v.Delay.Stamp,
 			)
 			chat := Chat{
@@ -611,40 +649,52 @@ func (c *Client) Recv() (stanza interface{}, err error) {
 		case *clientPresence:
 			return Presence{v.From, v.To, v.Type, v.Show, v.Status}, nil
 		case *clientIQ:
-			return IQ{v.ID, v.From, v.To, v.Type}, nil
-		case *componentIQ:
-			return IQ{v.ID, v.From, v.To, v.Type}, nil
+			return IQ{v.ID, v.From, v.To, v.Type, ""}, nil
 		}
 	}
 }
 
 // Send sends the message wrapped inside an XMPP message stanza body.
-func (c *Client) Send(chat Chat) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xml:lang='en'>"+"<body>%s</body></message>",
-		xmlEscape(chat.Remote), xmlEscape(chat.Type), xmlEscape(chat.Text))
+func (c *BasicClient) Send(chat Chat) (n int, err error) {
+	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>",
+		xmlEscape(chat.Remote), xmlEscape(chat.Type), c.xmlNs, xmlEscape(chat.Text))
 }
 
 // SendOrg sends the original text without being wrapped in an XMPP message stanza.
-func (c *Client) SendOrg(org string) (n int, err error) {
+func (c *BasicClient) SendOrg(org string) (n int, err error) {
 	return fmt.Fprint(c.conn, org)
 }
 
-func (c *Client) SendPresence(presence Presence) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<presence from='%s' to='%s'/>", xmlEscape(presence.From), xmlEscape(presence.To))
+func (c *BasicClient) SendPresence(presence Presence) (n int, err error) {
+	return fmt.Fprintf(c.conn, "<presence from='%s' to='%s' xmlns='%s'/>", xmlEscape(presence.From), xmlEscape(presence.To), c.xmlNs)
+}
+
+func (c *BasicClient) SendIQ(iq IQ) (n int, err error) {
+	return fmt.Fprintf(c.conn, "<iq from='%s' to='%s' id='%s' type='%s' xmlns='%s'>%s</iq>",
+		xmlEscape(iq.From), xmlEscape(iq.To), iq.ID, iq.Type, c.xmlNs, iq.Payload)
 }
 
 // SendHtml sends the message as HTML as defined by XEP-0071
-func (c *Client) SendHtml(chat Chat) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xml:lang='en'>"+
+func (c *BasicClient) SendHtml(chat Chat) (n int, err error) {
+	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xmlns='%s xml:lang='en'>"+
 		"<body>%s</body>"+
 		"<html xmlns='http://jabber.org/protocol/xhtml-im'><body xmlns='http://www.w3.org/1999/xhtml'>%s</body></html></message>",
-		xmlEscape(chat.Remote), xmlEscape(chat.Type), xmlEscape(chat.Text), chat.Text)
+		xmlEscape(chat.Remote), xmlEscape(chat.Type), c.xmlNs, xmlEscape(chat.Text), chat.Text)
 }
 
 // Roster asks for the chat roster.
-func (c *Client) Roster() error {
-	fmt.Fprintf(c.conn, "<iq from='%s' type='get' id='roster1'><query xmlns='jabber:iq:roster'/></iq>\n", xmlEscape(c.jid))
+func (c *BasicClient) Roster() error {
+	fmt.Fprintf(c.conn, "<iq from='%s' type='get' id='roster1' xmlns='%s><query xmlns='jabber:iq:roster'/></iq>\n",
+		xmlEscape(c.jid), c.xmlNs)
 	return nil
+}
+
+type xmppStanza struct {
+	From string `xml:"from,attr,omitempty"`
+	ID   string `xml:"id,attr,omitempty"`
+	To   string `xml:"to,attr,omitempty"`
+	Type string `xml:"type,attr,omitempty"`
+	Lang string `xml:"xml:lang,attr,omitempty"`
 }
 
 // RFC 3920  C.1  Streams name space
@@ -653,13 +703,14 @@ type streamFeatures struct {
 	StartTLS   *tlsStartTLS
 	Mechanisms saslMechanisms
 	Bind       bindBind
-	Session    bool
+	Session    bool `xml:"session,omitempty"`
+	StreamID   string
 }
 
 type streamError struct {
 	XMLName xml.Name `xml:"http://etherx.jabber.org/streams error"`
-	Any     xml.Name
-	Text    string
+	Any     xml.Name `xml:",any"`
+	Text    string   `xml:"text"`
 }
 
 // RFC 3920  C.3  TLS name space
@@ -709,17 +760,14 @@ type saslFailure struct {
 // RFC 3920  C.5  Resource binding name space
 type bindBind struct {
 	XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:xmpp-bind bind"`
-	Resource string
-	Jid      string `xml:"jid"`
+	Resource string   `xml:"resource,omitempty"`
+	Jid      string   `xml:"jid"`
 }
 
 // RFC 3921  B.1  jabber:client
 type clientMessage struct {
-	XMLName xml.Name `xml:"jabber:client message"`
-	From    string   `xml:"from,attr"`
-	ID      string   `xml:"id,attr"`
-	To      string   `xml:"to,attr"`
-	Type    string   `xml:"type,attr"` // chat, error, groupchat, headline, or normal
+	xmppStanza          // chat, error, groupchat, headline, or normal
+	XMLName    xml.Name `xml:"message"`
 
 	// These should technically be []clientText, but string is much more convenient.
 	Subject string `xml:"subject"`
@@ -742,12 +790,8 @@ type clientText struct {
 }
 
 type clientPresence struct {
-	XMLName xml.Name `xml:"jabber:client presence"`
-	From    string   `xml:"from,attr"`
-	ID      string   `xml:"id,attr"`
-	To      string   `xml:"to,attr"`
-	Type    string   `xml:"type,attr"` // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
-	Lang    string   `xml:"lang,attr"`
+	xmppStanza          // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
+	XMLName    xml.Name `xml:"presence"`
 
 	Show     string `xml:"show"`   // away, chat, dnd, xa
 	Status   string `xml:"status"` // sb []clientText
@@ -756,21 +800,19 @@ type clientPresence struct {
 }
 
 type clientIQ struct { // info/query
-	XMLName xml.Name `xml:"jabber:client iq"`
-	From    string   `xml:"from,attr"`
-	ID      string   `xml:"id,attr"`
-	To      string   `xml:"to,attr"`
-	Type    string   `xml:"type,attr"` // error, get, result, set
-	Error   clientError
-	Bind    bindBind
+	xmppStanza          // error, get, result, set
+	XMLName    xml.Name `xml:"iq"`
+
+	Error clientError
+	Bind  bindBind
 }
 
 type clientError struct {
-	XMLName xml.Name `xml:"jabber:client error"`
+	XMLName xml.Name `xml:"error"`
 	Code    string   `xml:",attr"`
 	Type    string   `xml:",attr"`
 	Any     xml.Name
-	Text    string
+	Text    string `xml:",chardata"`
 }
 
 type clientQuery struct {
@@ -802,7 +844,7 @@ func nextStart(p *xml.Decoder) (xml.StartElement, error) {
 // Scan XML token stream for next element and save into val.
 // If val == nil, allocate new element based on proto map.
 // Either way, return val.
-func next(p *xml.Decoder) (xml.Name, interface{}, error) {
+func (c *BasicClient) next(p *xml.Decoder) (xml.Name, interface{}, error) {
 	// Read start element to find out what type we want.
 	se, err := nextStart(p)
 	if err != nil {
@@ -836,18 +878,14 @@ func next(p *xml.Decoder) (xml.Name, interface{}, error) {
 		nv = &saslFailure{}
 	case nsBind + " bind":
 		nv = &bindBind{}
-	case nsClient + " message":
+	case c.xmlNs + " message":
 		nv = &clientMessage{}
-	case nsClient + " presence":
+	case c.xmlNs + " presence":
 		nv = &clientPresence{}
-	case nsClient + " iq":
+	case c.xmlNs + " iq":
 		nv = &clientIQ{}
-	case nsClient + " error":
+	case c.xmlNs + " error":
 		nv = &clientError{}
-	case nsComponentAccept + " message":
-		nv = &componentMessage{}
-	case nsComponentAccept + " iq":
-		nv = &componentIQ{}
 	default:
 		return xml.Name{}, nil, errors.New("unexpected XMPP message " +
 			se.Name.Space + " <" + se.Name.Local + "/>")

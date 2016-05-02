@@ -1,27 +1,38 @@
 package xmpp
 
-import (
-	"fmt"
+const (
+	PingC2SID   = "c2s1"
+	PingS2SID   = "s2s1"
+	pingPayload = "<ping xmlns='urn:xmpp:ping'/>"
 )
 
-func (c *Client) PingC2S(jid, server string) error {
-	if jid == "" {
-		jid = c.jid
+// PingC2S sends a ping from client to server.
+func (c *BasicClient) PingC2S(from, server string) error {
+	if from == "" {
+		from = c.jid
 	}
 	if server == "" {
-		server = c.domain
+		server = c.host
 	}
-	_, err := fmt.Fprintf(c.conn, "<iq from='%s' to='%s' id='c2s1' type='get'>\n"+
-		"<ping xmlns='urn:xmpp:ping'/>\n"+
-		"</iq>",
-		xmlEscape(jid), xmlEscape(server))
+
+	_, err := c.SendIQ(IQ{
+		To:      server,
+		From:    from,
+		ID:      PingC2SID,
+		Type:    "get",
+		Payload: pingPayload,
+	})
 	return err
 }
 
-func (c *Client) PingS2S(fromServer, toServer string) error {
-	_, err := fmt.Fprintf(c.conn, "<iq from='%s' to='%s' id='s2s1' type='get'>\n"+
-		"<ping xmlns='urn:xmpp:ping'/>\n"+
-		"</iq>",
-		xmlEscape(fromServer), xmlEscape(toServer))
+// PingS2S sends a ping from server to server.
+func (c *BasicClient) PingS2S(fromServer, toServer string) error {
+	_, err := c.SendIQ(IQ{
+		To:      toServer,
+		From:    fromServer,
+		ID:      PingS2SID,
+		Type:    "get",
+		Payload: pingPayload,
+	})
 	return err
 }

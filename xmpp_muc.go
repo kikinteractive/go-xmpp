@@ -24,12 +24,12 @@ const (
 )
 
 // Send sends room topic wrapped inside an XMPP message stanza body.
-func (c *Client) SendTopic(chat Chat) (n int, err error) {
+func (c *BasicClient) SendTopic(chat Chat) (n int, err error) {
 	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xml:lang='en'>"+"<subject>%s</subject></message>",
 		xmlEscape(chat.Remote), xmlEscape(chat.Type), xmlEscape(chat.Text))
 }
 
-func (c *Client) JoinMUCNoHistory(jid, nick string) (n int, err error) {
+func (c *BasicClient) JoinMUCNoHistory(jid, nick string) (n int, err error) {
 	if nick == "" {
 		nick = c.jid
 	}
@@ -41,7 +41,7 @@ func (c *Client) JoinMUCNoHistory(jid, nick string) (n int, err error) {
 }
 
 // xep-0045 7.2
-func (c *Client) JoinMUC(jid, nick string, history_type, history int, history_date *time.Time) (n int, err error) {
+func (c *BasicClient) JoinMUC(jid, nick string, history_type, history int, history_date *time.Time) (n int, err error) {
 	if nick == "" {
 		nick = c.jid
 	}
@@ -82,7 +82,7 @@ func (c *Client) JoinMUC(jid, nick string, history_type, history int, history_da
 }
 
 // xep-0045 7.2.6
-func (c *Client) JoinProtectedMUC(jid, nick string, password string, history_type, history int, history_date *time.Time) (n int, err error) {
+func (c *BasicClient) JoinProtectedMUC(jid, nick string, password string, history_type, history int, history_date *time.Time) (n int, err error) {
 	if nick == "" {
 		nick = c.jid
 	}
@@ -128,7 +128,7 @@ func (c *Client) JoinProtectedMUC(jid, nick string, password string, history_typ
 }
 
 // xep-0045 7.14
-func (c *Client) LeaveMUC(jid string) (n int, err error) {
+func (c *BasicClient) LeaveMUC(jid string) (n int, err error) {
 	return fmt.Fprintf(c.conn, "<presence from='%s' to='%s' type='unavailable' />",
 		c.jid, xmlEscape(jid))
 }
