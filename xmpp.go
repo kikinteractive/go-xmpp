@@ -583,12 +583,13 @@ func (c *BasicClient) IsEncrypted() bool {
 
 // Chat is an incoming or outgoing XMPP chat message.
 type Chat struct {
-	Remote string
-	Type   string
-	Text   string
-	Roster Roster
-	Other  []string
-	Stamp  time.Time
+	Remote  string
+	Type    string
+	Subject string
+	Text    string
+	Roster  Roster
+	Other   []string
+	Stamp   time.Time
 }
 
 // Roster is an array of contacts.
@@ -633,11 +634,12 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 				v.Delay.Stamp,
 			)
 			chat := Chat{
-				Remote: v.From,
-				Type:   v.Type,
-				Text:   v.Body,
-				Other:  v.Other,
-				Stamp:  stamp,
+				Remote:  v.From,
+				Type:    v.Type,
+				Subject: v.Subject,
+				Text:    v.Body,
+				Other:   v.Other,
+				Stamp:   stamp,
 			}
 			return chat, nil
 		case *clientQuery:
