@@ -1,3 +1,4 @@
+// Jabber Component implementaqtion for jabber:component:accept namespace, see http://www.xmpp.org/extensions/xep-0114.html.
 package xmpp
 
 import (
@@ -34,14 +35,14 @@ func (o ComponentOptions) NewClient() (Client, error) {
 
 	c := &ComponentClient{
 		BasicClient: &BasicClient{
-			xmlNs: nsComponentAccept,
-			conn:  conn,
-			host:  host,
-			user:  o.User,
+			conn: conn,
+			host: host,
+			user: o.User,
 		},
 	}
 
 	// Declare intent to be a jabber client and gather stream features.
+	// XEP-0114 3. Protocol Flow.
 	streamID, err := c.startStream(&o, host)
 	if err != nil {
 		return nil, err
@@ -52,11 +53,18 @@ func (o ComponentOptions) NewClient() (Client, error) {
 		return nil, err
 	}
 
+	// Recreate the XML decoder with a default client namespace.
+	if o.Debug {
+		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
+	} else {
+		c.p = xml.NewDecoder(c.conn)
+	}
+
 	return c, nil
 }
 
-// NewComponentClient creates a new connection to a host given as "hostname" or "hostname:port".
-// The connection uses a component protocol, see http://www.xmpp.org/extensions/xep-0114.html
+// NewComponentClient creates a new connection to a host given as "hostname" or "hostname:port"
+// and initializes a component client.
 func NewComponentClient(host, cname, secret string, debug bool) (Client, error) {
 	opts := ComponentOptions{
 		Options: Options{
@@ -70,7 +78,7 @@ func NewComponentClient(host, cname, secret string, debug bool) (Client, error) 
 	return opts.NewClient()
 }
 
-// startStream creates a new stream and returns stream ID.
+// startStream creates a new jabber:component:accept stream and returns stream ID.
 func (c *ComponentClient) startStream(o *ComponentOptions, domain string) (string, error) {
 	if o.Debug {
 		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
@@ -79,7 +87,7 @@ func (c *ComponentClient) startStream(o *ComponentOptions, domain string) (strin
 	}
 
 	_, err := fmt.Fprintf(c.conn, "<?xml version='1.0'?><stream:stream to='%s' xmlns='%s' xmlns:stream='%s' version='1.0'>\n",
-		xmlEscape(domain), c.xmlNs, nsStream)
+		xmlEscape(domain), nsComponentAccept, nsStream)
 	if err != nil {
 		return "", err
 	}
@@ -131,7 +139,7 @@ func (c *ComponentClient) startHandshake(streamID, secret string) error {
 			}
 			return fmt.Errorf("handshake error: %s", se.Name.Local)
 		}
-		return fmt.Errorf("handshake error, expected <handshake> but got <%v>", se.Name.Local)
+		return fmt.Errorf("unexpected handshake error, expected <handshake> but got <%s>", se.Name.Local)
 	}
 
 	// Skip handshake reply.
