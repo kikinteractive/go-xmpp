@@ -41,23 +41,16 @@ func (o ComponentOptions) NewClient() (Client, error) {
 		},
 	}
 
-	// Declare intent to be a jabber client and gather stream features.
 	// XEP-0114 3. Protocol Flow.
+	// Declare intent to be a jabber client and gather stream features.
 	streamID, err := c.startStream(&o, host)
 	if err != nil {
 		return nil, err
 	}
 
-	// Start component handshake.
-	if err := c.startHandshake(streamID, o.Password); err != nil {
+	// Component handshake.
+	if err := c.doHandshake(&o, streamID); err != nil {
 		return nil, err
-	}
-
-	// Recreate the XML decoder with a default client namespace.
-	if o.Debug {
-		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
-	} else {
-		c.p = xml.NewDecoder(c.conn)
 	}
 
 	return c, nil
@@ -110,15 +103,20 @@ func (c *ComponentClient) startStream(o *ComponentOptions, domain string) (strin
 		}
 	}
 
+	if streamID == "" {
+		return "", fmt.Errorf("component stream id not found")
+	}
+
 	return streamID, nil
 }
 
-// startHandshake starts the component handshake on the provided stream and
-// checks the authentication results.
-func (c *ComponentClient) startHandshake(streamID, secret string) error {
+// doHandshake performs the XEP-0114 component handshake on the provided component stream.
+// If successful, the XML decoder is recreated with a default jabber::client namespace.
+func (c *ComponentClient) doHandshake(o *ComponentOptions, streamID string) error {
+	// Create a hash with streamID and a secret.
 	hash := sha1.New()
 	hash.Write([]byte(streamID))
-	hash.Write([]byte(secret))
+	hash.Write([]byte(o.Password))
 
 	// Send handshake.
 	if _, err := fmt.Fprintf(c.conn, "<handshake>%x</handshake>\n", hash.Sum(nil)); err != nil {
@@ -142,10 +140,12 @@ func (c *ComponentClient) startHandshake(streamID, secret string) error {
 		return fmt.Errorf("unexpected handshake error, expected <handshake> but got <%s>", se.Name.Local)
 	}
 
-	// Skip handshake reply.
-	//if err := c.p.Skip(); err != nil {
-	//	return err
-	//}
+	// Handshake successful, recreate the XML decoder with a default client namespace.
+	if o.Debug {
+		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
+	} else {
+		c.p = xml.NewDecoder(c.conn)
+	}
 
 	return nil
 }

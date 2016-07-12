@@ -617,6 +617,7 @@ type IQ struct {
 	Payload string
 }
 
+// Error is an XMPP error.
 type Error struct {
 	ID        string
 	From      string
@@ -628,7 +629,7 @@ type Error struct {
 // Error implements error interface.
 func (e *Error) Error() string {
 	if e.Condition != nil {
-		return fmt.Sprintf("error for message id %s: %s", e.Condition)
+		return fmt.Sprintf("error for message id %s: %s", e.ID, e.Condition)
 	}
 	return fmt.Sprintf("error for message id %s: type %s, code %s", e.ID, e.Type, e.Code)
 }
@@ -658,15 +659,14 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 				time.RFC3339,
 				v.Delay.Stamp,
 			)
-			chat := Chat{
+			return Chat{
 				Remote:  v.From,
 				Type:    v.Type,
 				Subject: v.Subject,
 				Text:    v.Body,
 				Other:   v.Other,
 				Stamp:   stamp,
-			}
-			return chat, nil
+			}, nil
 		case *clientQuery:
 			var r Roster
 			for _, item := range v.Item {
@@ -813,7 +813,7 @@ type bindBind struct {
 }
 
 // RFC 3920 9.1 Common stanza attributes.
-type xmppStanza struct {
+type stanza struct {
 	From  string       `xml:"from,attr,omitempty"`
 	ID    string       `xml:"id,attr,omitempty"`
 	To    string       `xml:"to,attr,omitempty"`
@@ -824,7 +824,7 @@ type xmppStanza struct {
 
 // RFC 3921 2.1 Message stanza.
 type clientMessage struct {
-	*xmppStanza
+	*stanza
 	XMLName xml.Name `xml:"jabber:client message"`
 
 	// RFC 3921 2.1.2. Child Elements.
@@ -851,8 +851,8 @@ type clientText struct {
 
 // RFC 3921 2.2 Presence stanza.
 type clientPresence struct {
-	*xmppStanza          // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
-	XMLName     xml.Name `xml:"jabber:client presence"`
+	*stanza          // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
+	XMLName xml.Name `xml:"jabber:client presence"`
 
 	// RFC 3921 2.2.2. Child Elements.
 	Show     string `xml:"show"` // away, chat, dnd, xa
@@ -862,8 +862,8 @@ type clientPresence struct {
 
 // RFC 3921 2.3 IQ stanza.
 type clientIQ struct {
-	*xmppStanza          // error, get, result, set
-	XMLName     xml.Name `xml:"jabber:client iq"`
+	*stanza          // error, get, result, set
+	XMLName xml.Name `xml:"jabber:client iq"`
 
 	// RFC 3921 3. Session Establishment.
 	Bind bindBind
