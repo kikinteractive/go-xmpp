@@ -579,6 +579,7 @@ func (c *BasicClient) IsEncrypted() bool {
 
 // Chat is an incoming or outgoing XMPP chat message.
 type Chat struct {
+	ID      string
 	Remote  string
 	Type    string
 	Subject string
@@ -586,7 +587,7 @@ type Chat struct {
 	Roster  Roster
 	Other   []string
 	Stamp   time.Time
-	Error   *stanzaError
+	Error   error
 }
 
 // Roster is an array of contacts.
@@ -601,11 +602,13 @@ type Contact struct {
 
 // Presence is an XMPP presence notification.
 type Presence struct {
+	ID     string
 	From   string
 	To     string
 	Type   string
 	Show   string
 	Status string
+	Error  error
 }
 
 // IQ is an XMPP info/query.
@@ -615,23 +618,7 @@ type IQ struct {
 	To      string
 	Type    string
 	Payload string
-}
-
-// Error is an XMPP error.
-type Error struct {
-	ID        string
-	From      string
-	Type      string
-	Code      string
-	Condition error
-}
-
-// Error implements error interface.
-func (e *Error) Error() string {
-	if e.Condition != nil {
-		return fmt.Sprintf("error for message id %s: %s", e.ID, e.Condition)
-	}
-	return fmt.Sprintf("error for message id %s: type %s, code %s", e.ID, e.Type, e.Code)
+	Error   error
 }
 
 // Recv waits to receive the next XMPP stanza.
@@ -646,27 +633,22 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 		// Fill and return a corresponding high-level object.
 		switch v := val.(type) {
 		case *clientMessage:
-			if v.Error != nil {
-				err = &Error{
-					From:      v.From,
-					ID:        v.ID,
-					Type:      v.Type,
-					Condition: mapErrorCondition(v.Error.Any.Local),
-				}
-				return Chat{}, err
-			}
 			stamp, _ := time.Parse(
 				time.RFC3339,
 				v.Delay.Stamp,
 			)
-			return Chat{
+			c := Chat{
 				Remote:  v.From,
 				Type:    v.Type,
 				Subject: v.Subject,
 				Text:    v.Body,
 				Other:   v.Other,
 				Stamp:   stamp,
-			}, nil
+			}
+			if v.Error != nil {
+				c.Error = mapErrorCondition(v.Error.Any.Local)
+			}
+			return c, nil
 		case *clientQuery:
 			var r Roster
 			for _, item := range v.Item {
@@ -674,27 +656,28 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 			}
 			return Chat{Type: "roster", Roster: r}, nil
 		case *clientPresence:
-			if v.Error != nil {
-				err = &Error{
-					From:      v.From,
-					ID:        v.ID,
-					Type:      v.Type,
-					Condition: mapErrorCondition(v.Error.Any.Local),
-				}
-				return Presence{}, err
+			p := Presence{
+				From:   v.From,
+				To:     v.To,
+				Type:   v.Type,
+				Show:   v.Show,
+				Status: v.Status,
 			}
-			return Presence{v.From, v.To, v.Type, v.Show, v.Status}, nil
+			if v.Error != nil {
+				p.Error = mapErrorCondition(v.Error.Any.Local)
+			}
+			return p, nil
 		case *clientIQ:
-			if v.Error != nil {
-				err = &Error{
-					From:      v.From,
-					ID:        v.ID,
-					Type:      v.Type,
-					Condition: mapErrorCondition(v.Error.Any.Local),
-				}
-				return IQ{}, err
+			iq := IQ{
+				ID:   v.ID,
+				From: v.From,
+				To:   v.To,
+				Type: v.Type,
 			}
-			return IQ{v.ID, v.From, v.To, v.Type, ""}, nil
+			if v.Error != nil {
+				iq.Error = mapErrorCondition(v.Error.Any.Local)
+			}
+			return iq, nil
 		}
 	}
 }
