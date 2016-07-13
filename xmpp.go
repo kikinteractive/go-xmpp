@@ -75,11 +75,12 @@ type Client interface {
 
 // BasicClient imnplements an XMPP client in jabber:client namespace.
 type BasicClient struct {
-	conn net.Conn // connection to server
-	jid  string   // Jabber ID for our connection
-	host string
-	user string
-	p    *xml.Decoder
+	conn  net.Conn // connection to server
+	jid   string   // Jabber ID for our connection
+	host  string
+	user  string
+	p     *xml.Decoder
+	debug bool
 }
 
 // JID returns the client Jabber ID.
@@ -212,8 +213,9 @@ func (o Options) NewClient() (Client, error) {
 	}
 
 	client := &BasicClient{
-		host: host,
-		user: o.User,
+		host:  host,
+		user:  o.User,
+		debug: o.Debug,
 	}
 
 	if o.NoTLS {
@@ -327,7 +329,7 @@ func (c *BasicClient) init(o *Options) error {
 	} // Otherwise, we'll be attempting ANONYMOUS
 
 	// Declare intent to be a jabber client and gather stream features.
-	f, err := c.startStream(o, domain)
+	f, err := c.startStream(domain)
 	if err != nil {
 		return err
 	}
@@ -446,7 +448,7 @@ func (c *BasicClient) init(o *Options) error {
 
 	// Now that we're authenticated, we're supposed to start the stream over again.
 	// Declare intent to be a jabber client.
-	if f, err = c.startStream(o, domain); err != nil {
+	if f, err = c.startStream(domain); err != nil {
 		return err
 	}
 
@@ -516,7 +518,7 @@ func (c *BasicClient) startTLSIfRequired(f *streamFeatures, o *Options, domain s
 	c.conn = t
 
 	// restart our declaration of XMPP stream intentions.
-	tf, err := c.startStream(o, domain)
+	tf, err := c.startStream(domain)
 	if err != nil {
 		return f, err
 	}
@@ -527,8 +529,8 @@ func (c *BasicClient) startTLSIfRequired(f *streamFeatures, o *Options, domain s
 // also started the stream; if o.Debug is true, startStream will tee decoded XML data to stderr.  The features advertised by the server
 // will be returned.
 // RFC  3290 4. XML Streams.
-func (c *BasicClient) startStream(o *Options, domain string) (*streamFeatures, error) {
-	if o.Debug {
+func (c *BasicClient) startStream(domain string) (*streamFeatures, error) {
+	if c.debug {
 		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
 	} else {
 		c.p = xml.NewDecoder(c.conn)
@@ -703,7 +705,7 @@ func (c *BasicClient) SendPresence(presence Presence) (n int, err error) {
 // SendIQ sends an information request/reply. stanza.
 func (c *BasicClient) SendIQ(iq IQ) (n int, err error) {
 	return fmt.Fprintf(c.conn, "<iq from='%s' to='%s' id='%s' type='%s' xmlns='%s'>%s</iq>",
-		xmlEscape(iq.From), xmlEscape(iq.To), iq.ID, iq.Type, nsClient, iq.Payload)
+		xmlEscape(iq.From), xmlEscape(iq.To), iq.ID, iq.Type, nsComponentAccept /*nsClient*/, iq.Payload)
 }
 
 // SendHtml sends the message as HTML as defined by XEP-0071
