@@ -3,7 +3,7 @@ package xmpp
 
 import "errors"
 
-// XMPP error conditions.
+// XMPP error conditions errors.
 var (
 	ErrBadRequest            = errors.New("bad request")
 	ErrConflict              = errors.New("conflict")
@@ -13,7 +13,7 @@ var (
 	ErrInternalServerError   = errors.New("internal server error")
 	ErrItemNotFound          = errors.New("item not found")
 	ErrJIDMalformed          = errors.New("jid malformed")
-	ErrNotAcceptable         = errors.New("not ccceptable")
+	ErrNotAcceptable         = errors.New("not acceptable")
 	ErrNotAllowed            = errors.New("not allowed")
 	ErrNotAuthorized         = errors.New("not authorized")
 	ErrPaymentRequired       = errors.New("payment required")
@@ -29,6 +29,7 @@ var (
 	ErrUnexpectedRequest     = errors.New("unexpected request")
 )
 
+// mapErrorCondition returns the error above, mapped from XMPP error condition.
 func mapErrorCondition(condition string) error {
 	var e error
 	switch condition {
@@ -75,7 +76,7 @@ func mapErrorCondition(condition string) error {
 	case "undefined-condition":
 		e = ErrUndefinedCondition
 	default:
-		e = errors.New("unknown error condition: " + condition)
+		e = errors.New("unknown xmpp error condition: " + condition)
 	}
 	return e
 }

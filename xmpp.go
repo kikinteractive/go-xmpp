@@ -638,6 +638,7 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 				v.Delay.Stamp,
 			)
 			c := Chat{
+				ID:      v.ID,
 				Remote:  v.From,
 				Type:    v.Type,
 				Subject: v.Subject,
@@ -657,6 +658,7 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 			return Chat{Type: "roster", Roster: r}, nil
 		case *clientPresence:
 			p := Presence{
+				ID:     v.ID,
 				From:   v.From,
 				To:     v.To,
 				Type:   v.Type,
@@ -869,9 +871,11 @@ type rosterItem struct {
 type stanzaError struct { // auth, cancel, continue, modify, wait
 	XMLName xml.Name `xml:"error"`
 
-	Code string   `xml:"code,attr"`
-	Type string   `xml:"type,attr"`
-	Any  xml.Name `xml:",any"`
+	// Error legacy code and type.
+	Code string `xml:"code,attr"`
+	Type string `xml:"type,attr"`
+
+	Any xml.Name `xml:",any"`
 }
 
 // Scan XML token stream to find next StartElement.
