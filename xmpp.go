@@ -708,41 +708,49 @@ func errFromStanza(v *stanza) Error {
 	}
 }
 
-// Send sends the message wrapped inside an XMPP message stanza body.
-func (c *BasicClient) Send(chat Chat) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>",
-		xmlEscape(chat.Remote), xmlEscape(chat.Type), nsClient, xmlEscape(chat.Text))
-}
-
 // SendOrg sends the original text without being wrapped in an XMPP message stanza.
 func (c *BasicClient) SendOrg(org string) (n int, err error) {
+	if c.debug {
+		fmt.Println(org)
+	}
 	return fmt.Fprint(c.conn, org)
+}
+
+// Send sends the message wrapped inside an XMPP message stanza body.
+func (c *BasicClient) Send(chat Chat) (n int, err error) {
+	str := fmt.Sprintf("<message to='%s' id='%s' type='%s' subject='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>\n",
+		xmlEscape(chat.Remote), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
+	return c.SendOrg(str)
 }
 
 // SendPresence sends a presence request stanza.
 func (c *BasicClient) SendPresence(presence Presence) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<presence from='%s' to='%s' xmlns='%s'/>", xmlEscape(presence.From), xmlEscape(presence.To), nsClient)
+	str := fmt.Sprintf("<presence from='%s' to='%s' xmlns='%s'/>", xmlEscape(presence.From), xmlEscape(presence.To), nsClient)
+	return c.SendOrg(str)
 }
 
 // SendIQ sends an information request/reply. stanza.
 func (c *BasicClient) SendIQ(iq IQ) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<iq from='%s' to='%s' id='%s' type='%s' xmlns='%s'>%s</iq>",
-		xmlEscape(iq.From), xmlEscape(iq.To), iq.ID, iq.Type, nsComponentAccept /*nsClient*/, iq.Payload)
+	str := fmt.Sprintf("<iq from='%s' to='%s' id='%s' type='%s' xmlns='%s'>%s</iq>",
+		xmlEscape(iq.From), xmlEscape(iq.To), iq.ID, iq.Type, nsClient, iq.Payload)
+	return c.SendOrg(str)
 }
 
 // SendHtml sends the message as HTML as defined by XEP-0071
 func (c *BasicClient) SendHtml(chat Chat) (n int, err error) {
-	return fmt.Fprintf(c.conn, "<message to='%s' type='%s' xmlns='%s xml:lang='en'>"+
+	str := fmt.Sprintf("<message to='%s' type='%s' xmlns='%s xml:lang='en'>"+
 		"<body>%s</body>"+
 		"<html xmlns='http://jabber.org/protocol/xhtml-im'><body xmlns='http://www.w3.org/1999/xhtml'>%s</body></html></message>",
 		xmlEscape(chat.Remote), xmlEscape(chat.Type), nsClient, xmlEscape(chat.Text), chat.Text)
+	return c.SendOrg(str)
 }
 
 // Roster asks for the chat roster.
 func (c *BasicClient) Roster() error {
-	fmt.Fprintf(c.conn, "<iq from='%s' type='get' id='roster1' xmlns='%s><query xmlns='jabber:iq:roster'/></iq>\n",
+	str := fmt.Sprintf("<iq from='%s' type='get' id='roster1' xmlns='%s><query xmlns='jabber:iq:roster'/></iq>\n",
 		xmlEscape(c.jid), nsClient)
-	return nil
+	_, err := c.SendOrg(str)
+	return err
 }
 
 // RFC 3920 4.6. Stream Features.

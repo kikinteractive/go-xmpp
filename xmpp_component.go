@@ -35,9 +35,10 @@ func (o ComponentOptions) NewClient() (Client, error) {
 
 	c := &ComponentClient{
 		BasicClient: &BasicClient{
-			conn: conn,
-			host: host,
-			user: o.User,
+			conn:  conn,
+			host:  host,
+			user:  o.User,
+			debug: o.Debug,
 		},
 	}
 
