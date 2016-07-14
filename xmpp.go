@@ -623,23 +623,40 @@ type IQ struct {
 	Error   error
 }
 
+type Error struct {
+	ID        string
+	From      string
+	Type      string
+	Code      string
+	Condition error
+	Text      string
+}
+
+// Error implements Error interface.
+func (e *Error) Error() string {
+	return fmt.Sprintf("message %s errored with code %s and condition %s", e.ID, e.Code, e.Condition)
+}
+
 // Recv waits to receive the next XMPP stanza.
 // Return type is either a presence notification, a chat message or a query result.
-func (c *BasicClient) Recv() (stanza interface{}, err error) {
+func (c *BasicClient) Recv() (interface{}, error) {
 	for {
 		_, val, err := c.next(c.p)
 		if err != nil {
-			return Chat{}, err
+			return nil, err
 		}
 
 		// Fill and return a corresponding high-level object.
 		switch v := val.(type) {
 		case *clientMessage:
+			if v.Error != nil {
+				return errFromStanza(v.stanza), nil
+			}
 			stamp, _ := time.Parse(
 				time.RFC3339,
 				v.Delay.Stamp,
 			)
-			c := Chat{
+			return Chat{
 				ID:      v.ID,
 				Remote:  v.From,
 				Type:    v.Type,
@@ -647,11 +664,7 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 				Text:    v.Body,
 				Other:   v.Other,
 				Stamp:   stamp,
-			}
-			if v.Error != nil {
-				c.Error = mapErrorCondition(v.Error.Any.Local)
-			}
-			return c, nil
+			}, nil
 		case *clientQuery:
 			var r Roster
 			for _, item := range v.Item {
@@ -659,30 +672,39 @@ func (c *BasicClient) Recv() (stanza interface{}, err error) {
 			}
 			return Chat{Type: "roster", Roster: r}, nil
 		case *clientPresence:
-			p := Presence{
+			if v.Error != nil {
+				return errFromStanza(v.stanza), nil
+			}
+			return Presence{
 				ID:     v.ID,
 				From:   v.From,
 				To:     v.To,
 				Type:   v.Type,
 				Show:   v.Show,
 				Status: v.Status,
-			}
-			if v.Error != nil {
-				p.Error = mapErrorCondition(v.Error.Any.Local)
-			}
-			return p, nil
+			}, nil
 		case *clientIQ:
-			iq := IQ{
+			if v.Error != nil {
+				return errFromStanza(v.stanza), nil
+			}
+			return IQ{
 				ID:   v.ID,
 				From: v.From,
 				To:   v.To,
 				Type: v.Type,
-			}
-			if v.Error != nil {
-				iq.Error = mapErrorCondition(v.Error.Any.Local)
-			}
-			return iq, nil
+			}, nil
 		}
+	}
+}
+
+func errFromStanza(v *stanza) Error {
+	return Error{
+		ID:        v.ID,
+		From:      v.From,
+		Type:      v.Error.Type,
+		Code:      v.Error.Code,
+		Text:      v.Error.Text,
+		Condition: mapErrorCondition(v.Error.Any.Local),
 	}
 }
 
@@ -877,6 +899,9 @@ type stanzaError struct { // auth, cancel, continue, modify, wait
 	Code string `xml:"code,attr"`
 	Type string `xml:"type,attr"`
 
+	Text string `xml:"text"`
+
+	// Condition should be here.
 	Any xml.Name `xml:",any"`
 }
 
