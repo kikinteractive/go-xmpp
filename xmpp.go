@@ -583,6 +583,7 @@ func (c *BasicClient) IsEncrypted() bool {
 type Chat struct {
 	ID      string
 	Remote  string
+	From    string
 	Type    string
 	Subject string
 	Text    string
@@ -718,8 +719,8 @@ func (c *BasicClient) SendOrg(org string) (n int, err error) {
 
 // Send sends the message wrapped inside an XMPP message stanza body.
 func (c *BasicClient) Send(chat Chat) (n int, err error) {
-	str := fmt.Sprintf("<message to='%s' id='%s' type='%s' subject='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>\n",
-		xmlEscape(chat.Remote), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
+	str := fmt.Sprintf("<message to='%s' from='%s' id='%s' type='%s' subject='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>\n",
+		xmlEscape(chat.Remote), xmlEscape(chat.From), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
 	return c.SendOrg(str)
 }
 
