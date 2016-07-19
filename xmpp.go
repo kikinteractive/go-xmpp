@@ -659,7 +659,7 @@ func (c *BasicClient) Recv() (interface{}, error) {
 			)
 			return Chat{
 				ID:      v.ID,
-				Remote:  v.From,
+				From:    v.From,
 				Type:    v.Type,
 				Subject: v.Subject,
 				Text:    v.Body,
