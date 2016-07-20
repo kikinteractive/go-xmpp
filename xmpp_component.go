@@ -173,6 +173,6 @@ func (c *ComponentClient) doHandshake(streamID, secret string) error {
 // xep-0114 says that "from" should always be specified.
 func (c *ComponentClient) Send(chat Chat) (n int, err error) {
 	str := fmt.Sprintf("<message to='%s' from='%s' id='%s' type='%s' subject='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>\n",
-		xmlEscape(chat.Remote), xmlEscape(c.Name), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
+		xmlEscape(chat.Remote), xmlEscape(c.user), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
 	return c.SendOrg(str)
 }
