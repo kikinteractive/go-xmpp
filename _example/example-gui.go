@@ -1,12 +1,12 @@
 package main
 
 import (
-	"crypto/tls"
-	"github.com/mattn/go-gtk/gtk"
-	"github.com/mattn/go-xmpp"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/mattn/go-gtk/gtk"
+	"github.com/mattn/go-xmpp"
 )
 
 func main() {
@@ -68,10 +68,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	xmpp.DefaultConfig = tls.Config{
-		ServerName:         "talk.google.com",
-		InsecureSkipVerify: false,
-	}
+	xmpp.DefaultConfig.ServerName = "talk.google.com"
+	xmpp.DefaultConfig.InsecureSkipVerify = false
 
 	talk, err := xmpp.NewClient("talk.google.com:443", username_, password_, false)
 	if err != nil {

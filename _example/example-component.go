@@ -12,8 +12,8 @@ import (
 )
 
 var server = flag.String("server", "", "server")
-var username = flag.String("username", "", "username")
-var secret = flag.String("secret", "", "secret")
+var cname = flag.String("cname", "", "component name")
+var secret = flag.String("secret", "", "handshake secret")
 var debug = flag.Bool("debug", false, "debug output")
 
 func main() {
@@ -23,15 +23,11 @@ func main() {
 		os.Exit(2)
 	}
 	flag.Parse()
-	if *username == "" || *secret == "" {
-		if *debug && *username == "" && *secret == "" {
-			fmt.Fprintf(os.Stderr, "no username or secret were given; attempting ANONYMOUS auth\n")
-		} else if *username != "" || *secret != "" {
-			flag.Usage()
-		}
+	if *cname == "" || *secret == "" {
+		flag.Usage()
 	}
 
-	talk, err := xmpp.NewComponentClient(*server, *username, *secret, *debug)
+	talk, err := xmpp.NewComponentClient(*server, *cname, *secret, *debug)
 	if err != nil {
 		log.Fatal(err)
 	}

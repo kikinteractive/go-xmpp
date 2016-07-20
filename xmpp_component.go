@@ -14,11 +14,15 @@ const nsComponentAccept = "jabber:component:accept"
 // ComponentOptions specify additional options for component client.
 type ComponentOptions struct {
 	Options
+	// Name holds the mandatory component name.
+	Name string
 }
 
 // ComponentClient holds XMPP connection opitons for component client.
 type ComponentClient struct {
 	*BasicClient
+	// Name holds the mandatory component name.
+	Name string
 }
 
 // NewClient establishes a new component Client connection based on a set of Options.
@@ -40,17 +44,18 @@ func (o ComponentOptions) NewClient() (Client, error) {
 			user:  o.User,
 			debug: o.Debug,
 		},
+		Name: o.Name,
 	}
 
 	// XEP-0114 3. Protocol Flow.
 	// Declare intent to be a jabber client and gather stream features.
-	streamID, err := c.startStream(&o, host)
+	streamID, err := c.startStream()
 	if err != nil {
 		return nil, err
 	}
 
 	// Component handshake.
-	if err := c.doHandshake(&o, streamID); err != nil {
+	if err := c.doHandshake(streamID, o.Password); err != nil {
 		return nil, err
 	}
 
@@ -60,29 +65,41 @@ func (o ComponentOptions) NewClient() (Client, error) {
 // NewComponentClient creates a new connection to a host given as "hostname" or "hostname:port"
 // and initializes a component client.
 func NewComponentClient(host, cname, secret string, debug bool) (Client, error) {
+	if host == "" {
+		return nil, fmt.Errorf("host not specified")
+	}
+	if cname == "" {
+		return nil, fmt.Errorf("component name not specified")
+	}
+	if secret == "" {
+		return nil, fmt.Errorf("handshake secret not specified")
+	}
+
 	opts := ComponentOptions{
 		Options: Options{
 			Host:     host,
-			User:     cname,
+			User:     "admin@" + cname,
 			Password: secret,
 			Debug:    debug,
 			Session:  false,
 		},
+		Name: cname,
 	}
 	return opts.NewClient()
 }
 
 // startStream creates a new jabber:component:accept stream and returns stream ID.
-func (c *ComponentClient) startStream(o *ComponentOptions, domain string) (string, error) {
-	if o.Debug {
+func (c *ComponentClient) startStream() (string, error) {
+	if c.debug {
 		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
 	} else {
 		c.p = xml.NewDecoder(c.conn)
 	}
 
-	_, err := fmt.Fprintf(c.conn, "<?xml version='1.0'?><stream:stream to='%s' xmlns='%s' xmlns:stream='%s' version='1.0'>\n",
-		xmlEscape(domain), nsComponentAccept, nsStream)
-	if err != nil {
+	str := fmt.Sprintf("<?xml version='1.0'?><stream:stream to='%s' xmlns='%s' xmlns:stream='%s' version='1.0'>\n",
+		xmlEscape(c.Name), nsComponentAccept, nsStream)
+
+	if _, err := c.SendOrg(str); err != nil {
 		return "", err
 	}
 
@@ -113,14 +130,15 @@ func (c *ComponentClient) startStream(o *ComponentOptions, domain string) (strin
 
 // doHandshake performs the XEP-0114 component handshake on the provided component stream.
 // If successful, the XML decoder is recreated with a default jabber::client namespace.
-func (c *ComponentClient) doHandshake(o *ComponentOptions, streamID string) error {
+func (c *ComponentClient) doHandshake(streamID, secret string) error {
 	// Create a hash with streamID and a secret.
 	hash := sha1.New()
 	hash.Write([]byte(streamID))
-	hash.Write([]byte(o.Password))
+	hash.Write([]byte(secret))
 
 	// Send handshake.
-	if _, err := fmt.Fprintf(c.conn, "<handshake>%x</handshake>\n", hash.Sum(nil)); err != nil {
+	hnd := fmt.Sprintf("<handshake>%x</handshake>\n", hash.Sum(nil))
+	if _, err := c.SendOrg(hnd); err != nil {
 		return err
 	}
 
@@ -142,11 +160,19 @@ func (c *ComponentClient) doHandshake(o *ComponentOptions, streamID string) erro
 	}
 
 	// Handshake successful, recreate the XML decoder with a default client namespace.
-	if o.Debug {
+	if c.debug {
 		c.p = xml.NewDecoder(tee{c.conn, os.Stderr})
 	} else {
 		c.p = xml.NewDecoder(c.conn)
 	}
 
 	return nil
+}
+
+// Send sends the message wrapped inside an XMPP message stanza body.
+// xep-0114 says that "from" should always be specified.
+func (c *ComponentClient) Send(chat Chat) (n int, err error) {
+	str := fmt.Sprintf("<message to='%s' from='%s' id='%s' type='%s' subject='%s' xmlns='%s' xml:lang='en'><body>%s</body></message>\n",
+		xmlEscape(chat.Remote), xmlEscape(c.Name), chat.ID, xmlEscape(chat.Type), xmlEscape(chat.Subject), nsClient, xmlEscape(chat.Text))
+	return c.SendOrg(str)
 }

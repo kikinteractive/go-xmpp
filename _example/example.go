@@ -5,10 +5,11 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"github.com/mattn/go-xmpp"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/mattn/go-xmpp"
 )
 
 var server = flag.String("server", "talk.google.com:443", "server")
@@ -40,10 +41,8 @@ func main() {
 	}
 
 	if !*notls {
-		xmpp.DefaultConfig = tls.Config{
-			ServerName:         serverName(*server),
-			InsecureSkipVerify: false,
-		}
+		xmpp.DefaultConfig.ServerName = serverName(*server)
+		xmpp.DefaultConfig.InsecureSkipVerify = false
 	}
 
 	var talk *xmpp.Client
