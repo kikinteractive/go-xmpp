@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-gtk/gtk"
-	"github.com/mattn/go-xmpp"
+	"github.com/kikinteractive/go-xmpp"
 )
 
 func main() {

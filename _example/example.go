@@ -2,14 +2,13 @@ package main
 
 import (
 	"bufio"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 
-	"github.com/mattn/go-xmpp"
+	"github.com/kikinteractive/go-xmpp"
 )
 
 var server = flag.String("server", "talk.google.com:443", "server")
@@ -45,7 +44,7 @@ func main() {
 		xmpp.DefaultConfig.InsecureSkipVerify = false
 	}
 
-	var talk *xmpp.Client
+	var talk xmpp.Client
 	var err error
 	options := xmpp.Options{Host: *server,
 		User:          *username,

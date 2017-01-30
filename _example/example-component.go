@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rounds/go-xmpp"
+	"github.com/kikinteractive/go-xmpp"
 )
 
 var server = flag.String("server", "", "server")
